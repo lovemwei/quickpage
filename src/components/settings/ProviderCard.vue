@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ProviderConfig } from '@/types/provider'
-import { corsHintLabels } from '@/data/providerPresets'
+import { corsHintLabels, providerProtocolLabels } from '@/data/providerPresets'
 
 const props = defineProps<{ provider: ProviderConfig; testing: boolean }>()
 defineEmits<{
@@ -28,14 +28,16 @@ const cors = computed(() => corsHintLabels[props.provider.corsHint])
     <template #header-extra>
       <n-space size="small">
         <n-tag size="small" :bordered="false">
-          {{ provider.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容' }}
+          {{ providerProtocolLabels[provider.protocol] }}
         </n-tag>
         <n-tag v-if="provider.useProxy" size="small" :bordered="false" type="info">本地代理</n-tag>
         <n-tag v-else size="small" :bordered="false" :type="cors.type">{{ cors.label }}</n-tag>
       </n-space>
     </template>
     <n-space vertical size="small">
-      <n-text depth="3" style="font-size: 12px; word-break: break-all">{{ provider.baseUrl }}</n-text>
+      <n-text depth="3" style="font-size: 12px; word-break: break-all">{{
+        provider.baseUrl
+      }}</n-text>
       <n-text depth="3" style="font-size: 12px">
         {{ maskedKey }} · {{ provider.models.length }} 个模型
       </n-text>

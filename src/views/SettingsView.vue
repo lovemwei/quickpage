@@ -91,7 +91,8 @@ onMounted(refreshUsage)
 
     <n-h3>服务商</n-h3>
     <n-alert type="info" :bordered="false" style="margin-bottom: 16px">
-      API Key 仅保存在本机浏览器中，所有请求由浏览器直连服务商。部分国内服务商可能不支持浏览器直连（CORS），可用「测试连接」验证。
+      API Key 仅保存在本机浏览器中。服务商可选择浏览器直连或本地代理；直连被 CORS
+      拦截时，使用本地代理并以 npm run dev / preview 方式运行。
     </n-alert>
     <n-grid :cols="2" :x-gap="12" :y-gap="12">
       <n-grid-item v-for="p in settings.providers" :key="p.id">

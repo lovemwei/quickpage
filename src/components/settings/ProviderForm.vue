@@ -2,8 +2,13 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { nanoid } from 'nanoid'
 import { useMessage } from 'naive-ui'
-import type { ProviderConfig } from '@/types/provider'
-import { providerPresets } from '@/data/providerPresets'
+import type { ProviderConfig, ProviderProtocol } from '@/types/provider'
+import {
+  getPresetEndpoint,
+  getPresetProtocols,
+  providerPresets,
+  providerProtocolLabels,
+} from '@/data/providerPresets'
 import { testProvider } from '@/services/llm/factory'
 
 const props = defineProps<{ show: boolean; provider: ProviderConfig | null }>()
@@ -33,12 +38,48 @@ const form = reactive<ProviderConfig>({
 
 const presetOptions = [
   ...providerPresets.map((p) => ({ label: p.name, value: p.id })),
-  { label: '自定义（OpenAI 兼容）', value: 'custom' },
+  { label: '自定义服务商', value: 'custom' },
 ]
 
+const selectedPreset = computed(() =>
+  providerPresets.find((p) => p.id === (form.presetId ?? presetChoice.value)),
+)
+
+const protocolOptions = computed(() => {
+  const protocols = selectedPreset.value
+    ? getPresetProtocols(selectedPreset.value)
+    : (['openai', 'anthropic'] as ProviderProtocol[])
+  return protocols.map((p) => ({ label: providerProtocolLabels[p], value: p }))
+})
+
 const presetNotes = computed(() => {
-  const preset = providerPresets.find((p) => p.id === (form.presetId ?? presetChoice.value))
-  return preset?.notes
+  return selectedPreset.value?.notes
+})
+
+const presetProtocolHelp = computed(() => {
+  const preset = selectedPreset.value
+  if (!preset) return ''
+  const protocols = getPresetProtocols(preset)
+  if (protocols.length <= 1) return ''
+  return `该预设支持：${protocols.map((p) => providerProtocolLabels[p]).join(' / ')}，切换协议会同步 Base URL`
+})
+
+const presetConnectionNotes = computed(() => {
+  return (
+    selectedPreset.value?.connectionNotes ??
+    '直连失败（CORS 报错）时选「本地代理」：请求经本机开发服务器转发，需以 npm run dev / preview 方式运行；静态部署下不可用'
+  )
+})
+
+const presetLinks = computed(() => {
+  const links = selectedPreset.value?.links
+  if (!links) return []
+  return [
+    { label: '官网', href: links.official },
+    { label: '文档', href: links.docs },
+    { label: 'API Key', href: links.apiKey },
+    { label: '模型', href: links.models },
+  ].filter((link): link is { label: string; href: string } => !!link.href)
 })
 
 watch(
@@ -78,19 +119,25 @@ function onPresetChange(value: string | null) {
   if (!preset) return
   form.name = preset.name
   form.protocol = preset.protocol
-  form.baseUrl = preset.baseUrl
+  form.baseUrl = getPresetEndpoint(preset, preset.protocol) ?? preset.baseUrl
   form.corsHint = preset.corsHint
   form.presetId = preset.id
+  form.useProxy = preset.defaultUseProxy ?? false
   form.models = [...preset.suggestedModels]
+}
+
+function onProtocolChange(protocol: ProviderProtocol) {
+  const preset = selectedPreset.value
+  if (!preset) return
+  const endpoint = getPresetEndpoint(preset, protocol)
+  if (endpoint) form.baseUrl = endpoint
 }
 
 const formVisible = computed(() => isEditing.value || presetChoice.value !== null)
 const canTest = computed(() => !!form.baseUrl.trim() && !!form.apiKey.trim())
 
 const fetchedOptions = computed(() =>
-  fetchedModels.value
-    .filter((m) => !form.models.includes(m))
-    .map((m) => ({ label: m, value: m })),
+  fetchedModels.value.filter((m) => !form.models.includes(m)).map((m) => ({ label: m, value: m })),
 )
 
 async function onTest() {
@@ -154,10 +201,34 @@ function onSave() {
           <n-input v-model:value="form.name" placeholder="服务商显示名称" />
         </n-form-item>
         <n-form-item label="协议">
-          <n-radio-group v-model:value="form.protocol">
-            <n-radio-button value="openai">OpenAI 兼容</n-radio-button>
-            <n-radio-button value="anthropic">Anthropic</n-radio-button>
-          </n-radio-group>
+          <n-space vertical size="small" style="width: 100%">
+            <n-radio-group v-model:value="form.protocol" @update:value="onProtocolChange">
+              <n-radio-button
+                v-for="option in protocolOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </n-radio-button>
+            </n-radio-group>
+            <n-text v-if="presetProtocolHelp" depth="3" style="font-size: 12px">
+              {{ presetProtocolHelp }}
+            </n-text>
+          </n-space>
+        </n-form-item>
+        <n-form-item v-if="presetLinks.length" label="资料">
+          <n-space size="small">
+            <a
+              v-for="link in presetLinks"
+              :key="link.label"
+              class="provider-link"
+              :href="link.href"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {{ link.label }}
+            </a>
+          </n-space>
         </n-form-item>
         <n-form-item label="连接方式">
           <n-space vertical size="small" style="width: 100%">
@@ -166,8 +237,7 @@ function onSave() {
               <n-radio-button :value="true">本地代理</n-radio-button>
             </n-radio-group>
             <n-text depth="3" style="font-size: 12px">
-              直连失败（CORS 报错）时选「本地代理」：请求经本机开发服务器转发，需以 npm run
-              dev / preview 方式运行；静态部署下不可用
+              {{ presetConnectionNotes }}
             </n-text>
           </n-space>
         </n-form-item>
@@ -211,3 +281,15 @@ function onSave() {
     </template>
   </n-modal>
 </template>
+
+<style scoped>
+.provider-link {
+  color: var(--n-primary-color);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.provider-link:hover {
+  text-decoration: underline;
+}
+</style>

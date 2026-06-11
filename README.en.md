@@ -4,7 +4,7 @@
 
 QuickPage is a **pure-frontend** tool that batch-generates high-fidelity prototypes from requirement documents: upload your docs (docx / pdf / xlsx / csv / md / txt / images), let AI understand the requirements and produce an editable page list, then batch-generate **style-consistent high-fidelity HTML prototypes** in parallel. Refine any page conversationally (with reference images), roll back across version history, and export PNG / self-contained HTML / a project-wide ZIP.
 
-No backend: API keys live only in your browser's localStorage, project data is stored in IndexedDB, and all LLM requests go directly from the browser to the provider.
+No backend: API keys live only in your browser's localStorage, project data is stored in IndexedDB, and LLM requests either go directly from the browser to the provider or through the local Vite proxy.
 
 ## Getting Started
 
@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-First run: open **Settings** → add a provider (presets included for DeepSeek, OpenRouter, Anthropic, OpenAI, SiliconFlow, Moonshot Kimi, Zhipu GLM, Alibaba DashScope, plus custom OpenAI-compatible endpoints) → paste your API key → "Test connection / fetch models" → pick an **analysis model** and a **generation model**. Provider configs are stored locally and can be edited or removed anytime; models can also be switched inline in the wizard and the workbench.
+First run: open **Settings** → add a provider (20+ presets including OpenAI, Anthropic, OpenRouter, DeepSeek, SiliconFlow, Moonshot Kimi, Zhipu GLM, Alibaba DashScope, ModelScope, Volcengine Ark, Tencent Hunyuan, Baidu Qianfan, MiniMax, GitHub Models, Google Gemini OpenAI-compatible, Groq, Mistral, Perplexity, Together, Fireworks, Cerebras, Hugging Face, LM Studio, Ollama, New API, plus custom OpenAI-compatible or Anthropic endpoints) → paste your API key → "Test connection / fetch models" → pick an **analysis model** and a **generation model**. Provider configs are stored locally and can be edited or removed anytime; models can also be switched inline in the wizard and the workbench.
 
 ## Workflow
 
@@ -47,7 +47,7 @@ The app itself supports light/dark theme toggle (🌙/☀️ in the top bar).
 
 ## Known limitations
 
-- Some Chinese providers (Kimi / Zhipu / DashScope) do not support browser CORS: switch the provider's connection mode to **Local proxy** in its edit dialog (requests are forwarded through the Vite dev server; requires running via `npm run dev` or `npm run preview`, and a dev-server restart after the vite config change). The local proxy is unavailable on static deployments — use OpenRouter or similar instead
+- Browser CORS behavior varies by provider: presets include a recommended connection mode; if direct browser access fails, switch the provider's connection mode to **Local proxy** in its edit dialog (requests are forwarded through the Vite dev server; requires running via `npm run dev` or `npm run preview`). The local proxy is unavailable on static deployments — use OpenRouter or similar instead
 - Preview and "keep CDN" export depend on `cdn.tailwindcss.com` being reachable (a mirror URL can be configured in Settings)
 - SheetJS CE cannot extract images embedded in xlsx; legacy .doc is unsupported — save as .docx
 - Scanned PDFs (≤10 pages) are rendered to images and require a vision model
