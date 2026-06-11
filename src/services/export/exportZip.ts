@@ -53,14 +53,14 @@ ${sections}
 
 export async function exportProjectZip(
   project: Project,
-  items: { page: Page; html: string }[],
+  items: { page: Page; html: string; groupName: string }[],
   opts: { inlineTailwind: boolean; onProgress?: (done: number, total: number) => void },
 ): Promise<void> {
   const zip = new JSZip()
   const used = new Set<string>()
   const entries: IndexEntry[] = []
   let done = 0
-  for (const { page, html } of items) {
+  for (const { page, html, groupName } of items) {
     const base = sanitizeFileName(page.spec.name)
     let file = `${base}.html`
     for (let i = 2; used.has(file); i++) file = `${base}-${i}.html`
@@ -70,8 +70,7 @@ export async function exportProjectZip(
     entries.push({
       file: `pages/${file}`,
       name: page.spec.name,
-      module:
-        project.analysis?.modules.find((m) => m.id === page.spec.moduleId)?.name ?? '未分组',
+      module: groupName,
     })
     done++
     opts.onProgress?.(done, items.length)

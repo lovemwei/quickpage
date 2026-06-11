@@ -1,33 +1,45 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useDialog } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
 import type { Page, PageGenStatus } from '@/types/page'
 import { useWorkbenchStore } from '@/stores/workbench'
 
 const wb = useWorkbenchStore()
 const dialog = useDialog()
+const message = useMessage()
 
 const addShow = ref(false)
 const addName = ref('')
-const addModuleId = ref<string | null>(null)
+const addParentId = ref<string>('')
+const addGroupOnly = ref(false)
 
-const moduleOptions = computed(
-  () =>
-    wb.project?.analysis?.modules.map((m) => ({ label: m.name, value: m.id })) ?? [],
-)
+const parentOptions = computed(() => [
+  { label: '作为一级菜单', value: '' },
+  ...wb.menuGroups
+    .filter((g) => !g.top.spec.parentId)
+    .map((g) => ({ label: `${g.top.spec.name} 下的二级`, value: g.top.spec.id })),
+])
 
 const STATUS_META: Record<PageGenStatus, { label: string; color: string }> = {
-  idle: { label: '未生成', color: 'rgba(255,255,255,0.25)' },
+  idle: { label: '未生成', color: 'rgba(127,127,127,0.45)' },
   queued: { label: '排队中', color: '#f59e0b' },
   generating: { label: '生成中', color: '#6366f1' },
   done: { label: '完成', color: '#22c55e' },
   failed: { label: '失败', color: '#ef4444' },
 }
 
+function childrenCount(page: Page): number {
+  return wb.pages.filter((p) => p.spec.parentId === page.spec.id).length
+}
+
 function confirmRemove(page: Page) {
+  if (childrenCount(page) > 0) {
+    message.warning('该一级菜单下还有二级页面，请先删除或移动它们')
+    return
+  }
   dialog.warning({
-    title: '删除页面',
-    content: `删除「${page.spec.name}」及其全部版本历史？`,
+    title: '删除',
+    content: `删除「${page.spec.name}」${page.spec.groupOnly ? '' : '及其全部版本历史'}？`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: () => wb.removePage(page.id),
@@ -36,15 +48,16 @@ function confirmRemove(page: Page) {
 
 function submitAdd() {
   const name = addName.value.trim()
-  const moduleId = addModuleId.value ?? wb.project?.analysis?.modules[0]?.id
-  if (!name || !moduleId) return
-  void wb.addPage(name, moduleId)
+  if (!name) return
+  void wb.addPage(name, addParentId.value || undefined, addGroupOnly.value)
   addShow.value = false
   addName.value = ''
+  addGroupOnly.value = false
 }
 
-function openAdd() {
-  addModuleId.value = wb.project?.analysis?.modules[0]?.id ?? null
+function openAdd(parentId = '') {
+  addParentId.value = parentId
+  addGroupOnly.value = false
   addShow.value = true
 }
 </script>
@@ -81,8 +94,12 @@ function openAdd() {
             size="tiny"
             secondary
             type="primary"
-            :disabled="!wb.pages.length"
-            @click="wb.generatePages(wb.pages.filter((p) => p.genStatus !== 'done').map((p) => p.id))"
+            :disabled="!wb.progress.total"
+            @click="
+              wb.generatePages(
+                wb.pages.filter((p) => p.genStatus !== 'done' && !p.spec.groupOnly).map((p) => p.id),
+              )
+            "
           >
             生成未完成
           </n-button>
@@ -91,12 +108,63 @@ function openAdd() {
     </div>
 
     <n-scrollbar class="panel-body">
-      <div v-for="group in wb.pagesByModule" :key="group.moduleId" class="module-group">
-        <div class="module-name">{{ group.moduleName }}</div>
+      <div v-for="group in wb.menuGroups" :key="group.top.id" class="menu-group">
+        <!-- 一级：纯分组 -->
+        <div v-if="group.top.spec.groupOnly" class="group-header">
+          <span class="group-name">{{ group.top.spec.name }}</span>
+          <span class="item-actions">
+            <n-button size="tiny" quaternary title="添加二级页面" @click="openAdd(group.top.spec.id)">
+              ＋
+            </n-button>
+            <n-button
+              size="tiny"
+              quaternary
+              type="error"
+              title="删除分组"
+              @click="confirmRemove(group.top)"
+            >
+              ✕
+            </n-button>
+          </span>
+        </div>
+        <!-- 一级：页面 -->
         <div
-          v-for="page in group.pages"
+          v-else
+          class="page-item top-item"
+          :class="{ active: wb.selectedPageId === group.top.id }"
+          @click="wb.selectPage(group.top.id)"
+        >
+          <n-spin v-if="group.top.genStatus === 'generating'" :size="10" class="status-spin" />
+          <span
+            v-else
+            class="status-dot"
+            :style="{ background: STATUS_META[group.top.genStatus].color }"
+            :title="STATUS_META[group.top.genStatus].label"
+          />
+          <span class="page-name">{{ group.top.spec.name }}</span>
+          <span class="item-actions" @click.stop>
+            <n-button
+              size="tiny"
+              quaternary
+              title="重新生成"
+              :disabled="group.top.genStatus === 'generating' || group.top.genStatus === 'queued'"
+              @click="wb.generatePages([group.top.id])"
+            >
+              ↻
+            </n-button>
+            <n-button size="tiny" quaternary title="添加二级页面" @click="openAdd(group.top.spec.id)">
+              ＋
+            </n-button>
+            <n-button size="tiny" quaternary type="error" title="删除" @click="confirmRemove(group.top)">
+              ✕
+            </n-button>
+          </span>
+        </div>
+        <!-- 二级页面 -->
+        <div
+          v-for="page in group.children"
           :key="page.id"
-          class="page-item"
+          class="page-item child-item"
           :class="{ active: wb.selectedPageId === page.id }"
           @click="wb.selectPage(page.id)"
         >
@@ -127,21 +195,19 @@ function openAdd() {
     </n-scrollbar>
 
     <div class="panel-foot">
-      <n-button size="small" dashed block @click="openAdd">+ 新增页面</n-button>
+      <n-button size="small" dashed block @click="openAdd()">+ 新增菜单/页面</n-button>
     </div>
 
-    <n-modal
-      v-model:show="addShow"
-      preset="card"
-      title="新增页面"
-      style="width: 420px"
-    >
+    <n-modal v-model:show="addShow" preset="card" title="新增菜单/页面" style="width: 440px">
       <n-form label-placement="left" label-width="64" size="small">
-        <n-form-item label="页面名">
+        <n-form-item label="名称">
           <n-input v-model:value="addName" placeholder="如：会员中心" @keyup.enter="submitAdd" />
         </n-form-item>
-        <n-form-item label="模块">
-          <n-select v-model:value="addModuleId" :options="moduleOptions" />
+        <n-form-item label="层级">
+          <n-select v-model:value="addParentId" :options="parentOptions" />
+        </n-form-item>
+        <n-form-item v-if="!addParentId" label="类型">
+          <n-checkbox v-model:checked="addGroupOnly">仅作导航分组，不生成页面</n-checkbox>
         </n-form-item>
       </n-form>
       <template #footer>
@@ -177,15 +243,17 @@ function openAdd() {
   flex: 1;
 }
 
-.module-group {
-  padding: 6px 8px;
+.menu-group {
+  padding: 4px 8px;
 }
 
-.module-name {
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 11px;
   color: var(--qp-text-faint);
-  padding: 6px 8px 4px;
-  text-transform: uppercase;
+  padding: 6px 10px 2px;
   letter-spacing: 0.5px;
 }
 
@@ -197,6 +265,10 @@ function openAdd() {
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
+}
+
+.child-item {
+  padding-left: 26px;
 }
 
 .page-item:hover {
@@ -230,7 +302,8 @@ function openAdd() {
   flex-shrink: 0;
 }
 
-.page-item:hover .item-actions {
+.page-item:hover .item-actions,
+.group-header:hover .item-actions {
   display: inline-flex;
 }
 

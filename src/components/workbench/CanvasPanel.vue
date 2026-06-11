@@ -56,7 +56,7 @@ watch(
         @update:value="(v: number | 'fit') => (zoom = v)"
       />
       <div style="flex: 1" />
-      <template v-if="wb.selectedPage">
+      <template v-if="wb.selectedPage && !wb.selectedPage.spec.groupOnly">
         <n-button
           v-if="wb.selectedPage.genStatus === 'generating' || wb.selectedPage.genStatus === 'queued'"
           size="tiny"
@@ -80,6 +80,10 @@ watch(
     <div class="canvas-body">
       <template v-if="!wb.selectedPage">
         <n-empty description="左侧选择一个页面" class="center" />
+      </template>
+
+      <template v-else-if="wb.selectedPage.spec.groupOnly">
+        <n-empty description="这是导航分组节点，不生成页面" class="center" />
       </template>
 
       <template v-else-if="wb.selectedPage.genStatus === 'generating' && wb.selectedStream">

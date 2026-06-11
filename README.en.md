@@ -24,8 +24,8 @@ First run: open **Settings** → add a provider (20+ presets including OpenAI, A
    - Border radius, density, font character, light/dark page mode
    - **Layout container**: PC — side nav / top nav / top bar + sidebar / no chrome (landing); Mobile — bottom tabs / top bar / immersive; plus auto mode and free-form notes
 3. **Upload documents** — parsed locally in the browser; embedded images can be selected and sent to vision models
-4. **Requirement analysis** — streaming structured output: product overview, modules, and a page list with content blocks per page
-5. **Review the list** — add / edit / remove pages, regroup and reorder, then confirm
+4. **Requirement analysis** — streaming structured output: product overview and a **two-level menu tree** of pages (level-1 / level-2 menus, with content blocks per page)
+5. **Review the list** — the full menu tree of pages to generate: add / edit / delete, change level and order, mark group-only nodes (no page generated), then confirm
 6. **Batch generation** — pages are generated concurrently (default 3, configurable 1–5); each finished page is persisted immediately
 7. **Refine & export**
    - Refine the selected page in natural language, optionally attaching up to 4 reference images (vision model required); quick-action chips included

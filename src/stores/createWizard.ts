@@ -192,7 +192,7 @@ export const useCreateWizardStore = defineStore('createWizard', () => {
       updatedAt: now,
     }
     const pages: Page[] = a.pages.map((spec, i) => ({
-      id: nanoid(),
+      id: spec.id,
       projectId,
       spec,
       sortOrder: i,

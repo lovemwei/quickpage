@@ -1,62 +1,83 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { nanoid } from 'nanoid'
+import { useMessage } from 'naive-ui'
 import type { PageSpec } from '@/types/analysis'
 import { useCreateWizardStore } from '@/stores/createWizard'
 
 const wizard = useCreateWizardStore()
+const message = useMessage()
 
 const analysis = computed(() => wizard.analysis)
 
-const moduleOptions = computed(
-  () => analysis.value?.modules.map((m) => ({ label: m.name, value: m.id })) ?? [],
-)
+const topMenus = computed(() => analysis.value?.pages.filter((p) => !p.parentId) ?? [])
 
-function pagesOf(moduleId: string): PageSpec[] {
-  return analysis.value?.pages.filter((p) => p.moduleId === moduleId) ?? []
+function childrenOf(topSpecId: string): PageSpec[] {
+  return analysis.value?.pages.filter((p) => p.parentId === topSpecId) ?? []
 }
 
-function addPage(moduleId: string) {
+const generateCount = computed(
+  () => analysis.value?.pages.filter((p) => !p.groupOnly).length ?? 0,
+)
+
+const parentOptions = computed(() => [
+  { label: '提升为一级菜单', value: '' },
+  ...topMenus.value.map((t) => ({ label: `${t.name} 下`, value: t.id })),
+])
+
+function addTopMenu(groupOnly = false) {
+  analysis.value?.pages.push({
+    id: nanoid(),
+    name: groupOnly ? '新分组' : '新页面',
+    groupOnly: groupOnly || undefined,
+    description: '',
+    blocks: [],
+  })
+}
+
+function addChild(top: PageSpec) {
   const a = analysis.value
   if (!a) return
-  const page: PageSpec = { id: nanoid(), name: '新页面', moduleId, description: '', blocks: [] }
-  let insertAt = a.pages.length
+  const child: PageSpec = { id: nanoid(), name: '新页面', parentId: top.id, description: '', blocks: [] }
+  let insertAt = a.pages.findIndex((p) => p.id === top.id) + 1
   for (let i = a.pages.length - 1; i >= 0; i--) {
-    if (a.pages[i]!.moduleId === moduleId) {
+    if (a.pages[i]!.parentId === top.id) {
       insertAt = i + 1
       break
     }
   }
-  a.pages.splice(insertAt, 0, page)
+  a.pages.splice(insertAt, 0, child)
 }
 
-function removePage(id: string) {
+function removePage(page: PageSpec) {
   const a = analysis.value
   if (!a) return
-  a.pages = a.pages.filter((p) => p.id !== id)
+  if (!page.parentId && childrenOf(page.id).length > 0) {
+    message.warning('该一级菜单下还有二级页面，请先删除或移动它们')
+    return
+  }
+  a.pages = a.pages.filter((p) => p.id !== page.id)
 }
 
-function movePage(id: string, dir: -1 | 1) {
+function movePage(page: PageSpec, dir: -1 | 1) {
   const a = analysis.value
   if (!a) return
-  const pages = a.pages
-  const idx = pages.findIndex((p) => p.id === id)
+  const ps = a.pages
+  const idx = ps.findIndex((p) => p.id === page.id)
   if (idx < 0) return
-  const moduleId = pages[idx]!.moduleId
+  const key = ps[idx]!.parentId ?? ''
   let j = idx + dir
-  while (j >= 0 && j < pages.length && pages[j]!.moduleId !== moduleId) j += dir
-  if (j < 0 || j >= pages.length) return
-  ;[pages[idx], pages[j]] = [pages[j]!, pages[idx]!]
+  while (j >= 0 && j < ps.length && (ps[j]!.parentId ?? '') !== key) j += dir
+  if (j < 0 || j >= ps.length) return
+  ;[ps[idx], ps[j]] = [ps[j]!, ps[idx]!]
 }
 
-function addModule() {
-  analysis.value?.modules.push({ id: nanoid(), name: '新模块', description: '' })
+function changeParent(page: PageSpec, parentId: string) {
+  page.parentId = parentId || undefined
 }
 
-function removeModule(id: string) {
-  const a = analysis.value
-  if (!a || pagesOf(id).length > 0) return
-  a.modules = a.modules.filter((m) => m.id !== id)
+function toggleGroupOnly(page: PageSpec, value: boolean) {
+  page.groupOnly = value || undefined
 }
 </script>
 
@@ -73,86 +94,136 @@ function removeModule(id: string) {
       </n-form>
     </n-card>
 
-    <div v-for="mod in analysis.modules" :key="mod.id" class="module-block">
-      <div class="module-head">
-        <n-input
-          v-model:value="mod.name"
+    <div class="list-head">
+      <n-text depth="2" style="font-size: 13px">
+        菜单结构（{{ topMenus.length }} 个一级菜单，共 {{ generateCount }} 个页面待生成）
+      </n-text>
+      <n-space size="small">
+        <n-button size="small" dashed @click="addTopMenu(false)">+ 一级菜单</n-button>
+        <n-button size="small" dashed @click="addTopMenu(true)">+ 分组（不生成页面）</n-button>
+      </n-space>
+    </div>
+
+    <div v-for="top in topMenus" :key="top.id" class="menu-block">
+      <div class="menu-row top" :class="{ 'group-only': top.groupOnly }">
+        <n-tag size="small" :bordered="false" :type="top.groupOnly ? 'default' : 'primary'">
+          {{ top.groupOnly ? '分组' : '一级' }}
+        </n-tag>
+        <n-input v-model:value="top.name" size="small" style="width: 170px" placeholder="菜单名" />
+        <n-checkbox
           size="small"
-          style="width: 200px; font-weight: 600"
-        />
-        <n-text depth="3" style="font-size: 12px; flex: 1">{{ mod.description }}</n-text>
-        <n-button size="tiny" quaternary @click="addPage(mod.id)">+ 添加页面</n-button>
-        <n-button
-          size="tiny"
-          quaternary
-          type="error"
-          :disabled="pagesOf(mod.id).length > 0"
-          @click="removeModule(mod.id)"
+          :checked="!!top.groupOnly"
+          @update:checked="(v: boolean) => toggleGroupOnly(top, v)"
         >
-          删除模块
-        </n-button>
+          仅分组
+        </n-checkbox>
+        <n-input
+          v-if="!top.groupOnly"
+          v-model:value="top.description"
+          size="small"
+          style="flex: 1"
+          placeholder="页面用途描述"
+        />
+        <div v-else style="flex: 1" />
+        <n-button size="tiny" quaternary title="上移" @click="movePage(top, -1)">↑</n-button>
+        <n-button size="tiny" quaternary title="下移" @click="movePage(top, 1)">↓</n-button>
+        <n-button size="tiny" quaternary type="primary" @click="addChild(top)">+ 二级</n-button>
+        <n-popconfirm @positive-click="removePage(top)">
+          <template #trigger>
+            <n-button size="tiny" quaternary type="error">删除</n-button>
+          </template>
+          删除「{{ top.name }}」？
+        </n-popconfirm>
+      </div>
+      <div v-if="!top.groupOnly" class="blocks-row">
+        <n-dynamic-tags v-model:value="top.blocks" size="small" />
       </div>
 
-      <div v-for="page in pagesOf(mod.id)" :key="page.id" class="page-row">
-        <div class="page-main">
-          <div style="display: flex; gap: 10px; align-items: center">
-            <n-input v-model:value="page.name" size="small" style="width: 180px" placeholder="页面名" />
-            <n-select
-              v-model:value="page.moduleId"
-              size="small"
-              :options="moduleOptions"
-              style="width: 150px"
-            />
-            <div style="flex: 1" />
-            <n-button size="tiny" quaternary @click="movePage(page.id, -1)">↑</n-button>
-            <n-button size="tiny" quaternary @click="movePage(page.id, 1)">↓</n-button>
-            <n-popconfirm @positive-click="removePage(page.id)">
-              <template #trigger>
-                <n-button size="tiny" quaternary type="error">删除</n-button>
-              </template>
-              删除「{{ page.name }}」？
-            </n-popconfirm>
-          </div>
+      <div v-for="child in childrenOf(top.id)" :key="child.id" class="child-wrap">
+        <div class="menu-row child">
+          <span class="indent">└</span>
+          <n-tag size="small" :bordered="false">二级</n-tag>
           <n-input
-            v-model:value="page.description"
+            v-model:value="child.name"
             size="small"
-            placeholder="页面用途描述"
-            style="margin: 8px 0"
+            style="width: 150px"
+            placeholder="页面名"
           />
-          <n-dynamic-tags v-model:value="page.blocks" size="small" />
+          <n-input
+            v-model:value="child.description"
+            size="small"
+            style="flex: 1"
+            placeholder="页面用途描述"
+          />
+          <n-select
+            :value="child.parentId ?? ''"
+            size="small"
+            :options="parentOptions"
+            style="width: 150px"
+            @update:value="(v: string) => changeParent(child, v)"
+          />
+          <n-button size="tiny" quaternary title="上移" @click="movePage(child, -1)">↑</n-button>
+          <n-button size="tiny" quaternary title="下移" @click="movePage(child, 1)">↓</n-button>
+          <n-popconfirm @positive-click="removePage(child)">
+            <template #trigger>
+              <n-button size="tiny" quaternary type="error">删除</n-button>
+            </template>
+            删除「{{ child.name }}」？
+          </n-popconfirm>
+        </div>
+        <div class="blocks-row child-blocks">
+          <n-dynamic-tags v-model:value="child.blocks" size="small" />
         </div>
       </div>
     </div>
 
-    <n-button dashed size="small" style="margin-top: 4px" @click="addModule">+ 添加模块</n-button>
-
-    <n-alert
-      v-if="!analysis.pages.length"
-      type="warning"
-      :bordered="false"
-      style="margin-top: 14px"
-    >
-      页面清单为空，请至少保留一个页面
+    <n-alert v-if="!generateCount" type="warning" :bordered="false" style="margin-top: 14px">
+      当前没有待生成的页面，请至少保留一个非分组页面
     </n-alert>
   </div>
 </template>
 
 <style scoped>
-.module-block {
-  margin-bottom: 18px;
-}
-
-.module-head {
+.list-head {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
-.page-row {
+.menu-block {
   border: 1px solid var(--qp-border);
   border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-row.top.group-only {
+  opacity: 0.85;
+}
+
+.blocks-row {
+  margin: 8px 0 2px 52px;
+}
+
+.child-wrap {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--qp-border);
+}
+
+.indent {
+  color: var(--qp-text-faint);
+  margin-left: 12px;
+}
+
+.child-blocks {
+  margin-left: 76px;
 }
 </style>

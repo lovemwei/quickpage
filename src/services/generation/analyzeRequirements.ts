@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { nanoid } from 'nanoid'
 import type { ChatMessage, ContentPart } from '@/types/llm'
 import type { Platform } from '@/types/project'
-import type { ModuleSpec, RequirementAnalysis } from '@/types/analysis'
+import type { PageSpec, RequirementAnalysis } from '@/types/analysis'
 import type { ExtractedImage } from '@/types/parsing'
 import type { ProviderConfig } from '@/types/provider'
 import { blobToBase64 } from '@/utils/blob'
@@ -19,14 +19,11 @@ const rawSchema = z.object({
   productName: z.string().catch('未命名产品'),
   overview: z.string().catch(''),
   targetUsers: z.string().optional().catch(undefined),
-  modules: z
-    .array(z.object({ name: z.string(), description: z.string().catch('') }))
-    .catch([]),
   pages: z
     .array(
       z.object({
         name: z.string(),
-        module: z.string().catch(''),
+        parent: z.string().catch(''),
         description: z.string().catch(''),
         blocks: z.array(z.string()).catch([]),
       }),
@@ -35,32 +32,64 @@ const rawSchema = z.object({
 })
 
 function normalize(raw: z.infer<typeof rawSchema>): RequirementAnalysis {
-  const modules: ModuleSpec[] = []
-  const moduleByName = new Map<string, ModuleSpec>()
-  const ensureModule = (name: string, description = ''): ModuleSpec => {
-    const key = name.trim() || '其他'
-    let mod = moduleByName.get(key)
-    if (!mod) {
-      mod = { id: nanoid(), name: key, description }
-      moduleByName.set(key, mod)
-      modules.push(mod)
-    }
-    return mod
-  }
-  for (const m of raw.modules) ensureModule(m.name, m.description)
-  const pages = raw.pages.map((p) => ({
-    id: nanoid(),
+  const cleaned = raw.pages.map((p) => ({
     name: p.name.trim() || '未命名页面',
-    moduleId: ensureModule(p.module).id,
+    parent: p.parent.trim(),
     description: p.description.trim(),
     blocks: p.blocks.map((b) => b.trim()).filter(Boolean).slice(0, 12),
   }))
+
+  const pages: PageSpec[] = []
+  const topByName = new Map<string, PageSpec>()
+
+  for (const p of cleaned) {
+    if (p.parent && p.parent !== p.name) continue
+    const spec: PageSpec = {
+      id: nanoid(),
+      name: p.name,
+      description: p.description,
+      blocks: p.blocks,
+    }
+    pages.push(spec)
+    if (!topByName.has(spec.name)) topByName.set(spec.name, spec)
+  }
+
+  for (const p of cleaned) {
+    if (!p.parent || p.parent === p.name) continue
+    let parent = topByName.get(p.parent)
+    if (!parent) {
+      // LLM 只在 parent 中引用、未单独列出的一级菜单 → 自动创建为纯分组
+      parent = {
+        id: nanoid(),
+        name: p.parent,
+        groupOnly: true,
+        description: '',
+        blocks: [],
+      }
+      pages.push(parent)
+      topByName.set(parent.name, parent)
+    }
+    pages.push({
+      id: nanoid(),
+      name: p.name,
+      parentId: parent.id,
+      description: p.description,
+      blocks: p.blocks,
+    })
+  }
+
+  // 重排：每个一级菜单后紧跟其二级页面
+  const ordered: PageSpec[] = []
+  for (const top of pages.filter((p) => !p.parentId)) {
+    ordered.push(top)
+    for (const child of pages.filter((p) => p.parentId === top.id)) ordered.push(child)
+  }
+
   return {
     productName: raw.productName.trim() || '未命名产品',
     overview: raw.overview.trim(),
     targetUsers: raw.targetUsers?.trim() || undefined,
-    modules,
-    pages,
+    pages: ordered,
   }
 }
 

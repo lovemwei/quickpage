@@ -38,9 +38,16 @@ async function handle(key: string | number) {
         `${sanitizeFileName(wb.selectedPage.spec.name)}.html`,
       )
     } else if (key === 'zip') {
+      const nameBySpecId = new Map(wb.pages.map((p) => [p.spec.id, p.spec.name]))
       const items = wb.pages
-        .filter((p) => wb.htmlByPage.has(p.id))
-        .map((p) => ({ page: p, html: wb.htmlByPage.get(p.id)! }))
+        .filter((p) => !p.spec.groupOnly && wb.htmlByPage.has(p.id))
+        .map((p) => ({
+          page: p,
+          html: wb.htmlByPage.get(p.id)!,
+          groupName: p.spec.parentId
+            ? (nameBySpecId.get(p.spec.parentId) ?? '未分组')
+            : p.spec.name,
+        }))
       await exportProjectZip(project, items, {
         inlineTailwind: true,
         onProgress: (done, total) => {

@@ -26,9 +26,13 @@ const canNext = computed(() => {
   }
 })
 
+const generateCount = computed(
+  () => wizard.analysis?.pages.filter((p) => !p.groupOnly).length ?? 0,
+)
+
 async function onCreate() {
-  if (!wizard.analysis?.pages.length) {
-    message.error('页面清单为空，无法创建')
+  if (!generateCount.value) {
+    message.error('没有待生成的页面，无法创建')
     return
   }
   creating.value = true
@@ -76,7 +80,7 @@ async function onCreate() {
         v-if="wizard.step === 5"
         type="primary"
         :loading="creating"
-        :disabled="!wizard.analysis?.pages.length"
+        :disabled="!generateCount"
         @click="onCreate"
       >
         创建项目并开始生成

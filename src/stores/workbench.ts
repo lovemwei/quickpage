@@ -72,31 +72,40 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   })
 
   const progress = computed(() => {
-    const total = pages.value.length
-    const done = pages.value.filter((p) => p.genStatus === 'done').length
-    const active = pages.value.filter(
+    const real = pages.value.filter((p) => !p.spec.groupOnly)
+    const total = real.length
+    const done = real.filter((p) => p.genStatus === 'done').length
+    const active = real.filter(
       (p) => p.genStatus === 'generating' || p.genStatus === 'queued',
     ).length
-    const failed = pages.value.filter((p) => p.genStatus === 'failed').length
+    const failed = real.filter((p) => p.genStatus === 'failed').length
     return { total, done, active, failed }
   })
 
-  const pagesByModule = computed(() => {
-    const groups: { moduleId: string; moduleName: string; pages: Page[] }[] = []
-    const byId = new Map<string, (typeof groups)[number]>()
-    for (const p of pages.value) {
-      let g = byId.get(p.spec.moduleId)
-      if (!g) {
-        const name =
-          project.value?.analysis?.modules.find((m) => m.id === p.spec.moduleId)?.name ?? '未分组'
-        g = { moduleId: p.spec.moduleId, moduleName: name, pages: [] }
-        byId.set(p.spec.moduleId, g)
-        groups.push(g)
-      }
-      g.pages.push(p)
+  /** 两级菜单树：一级（含纯分组）+ 其二级页面；父级丢失的孤儿按一级展示 */
+  const menuGroups = computed(() => {
+    const tops = pages.value.filter((p) => !p.spec.parentId)
+    const topSpecIds = new Set(tops.map((t) => t.spec.id))
+    const groups = tops.map((top) => ({
+      top,
+      children: pages.value.filter((p) => p.spec.parentId === top.spec.id),
+    }))
+    for (const orphan of pages.value.filter(
+      (p) => p.spec.parentId && !topSpecIds.has(p.spec.parentId),
+    )) {
+      groups.push({ top: orphan, children: [] })
     }
     return groups
   })
+
+  function buildMenuTreeText(): string {
+    const lines: string[] = []
+    for (const { top, children } of menuGroups.value) {
+      lines.push(`- ${top.spec.name}${top.spec.groupOnly ? '（分组，无独立页面）' : ''}`)
+      for (const child of children) lines.push(`  - ${child.spec.name}`)
+    }
+    return lines.join('\n')
+  }
 
   function pageOf(pageId: string): Page | undefined {
     return pages.value.find((p) => p.id === pageId)
@@ -150,9 +159,10 @@ export const useWorkbenchStore = defineStore('workbench', () => {
             productName: analysis?.productName ?? proj.name,
             overview: analysis?.overview ?? '',
             targetUsers: analysis?.targetUsers,
-            moduleName:
-              analysis?.modules.find((m) => m.id === page.spec.moduleId)?.name ?? '通用',
-            siblingNames: pages.value.map((p) => p.spec.name),
+            menuTree: buildMenuTreeText(),
+            parentName: page.spec.parentId
+              ? pages.value.find((p) => p.spec.id === page.spec.parentId)?.spec.name
+              : undefined,
           },
           maxTokens: settings.genParams.maxTokens,
           temperature: settings.genParams.temperature,
@@ -207,7 +217,8 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       streams.clear()
       refineChats.clear()
       scheduler = makeScheduler()
-      selectedPageId.value = data.pages[0]?.id ?? null
+      selectedPageId.value =
+        data.pages.find((p) => !p.spec.groupOnly)?.id ?? data.pages[0]?.id ?? null
       await loadVersions()
       if (autostart) {
         generatePages(pages.value.filter((p) => p.genStatus !== 'done').map((p) => p.id))
@@ -221,7 +232,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     if (!scheduler) return
     const targets = pageIds
       .map((id) => pageOf(id))
-      .filter((p): p is Page => !!p && !scheduler!.isActive(p.id))
+      .filter((p): p is Page => !!p && !p.spec.groupOnly && !scheduler!.isActive(p.id))
     if (targets.length) scheduler.enqueue(targets)
   }
 
@@ -332,20 +343,33 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     await pageRepo.update(page.id, { spec: page.spec })
   }
 
-  async function addPage(name: string, moduleId: string): Promise<void> {
+  /** 新增页面：parentSpecId 为空 = 一级菜单；groupOnly = 仅分组 */
+  async function addPage(
+    name: string,
+    parentSpecId?: string,
+    groupOnly = false,
+  ): Promise<void> {
     const proj = project.value
     if (!proj) return
+    const specId = nanoid()
     const page: Page = {
-      id: nanoid(),
+      id: specId,
       projectId: proj.id,
-      spec: { id: nanoid(), name, moduleId, description: '', blocks: [] },
+      spec: {
+        id: specId,
+        name,
+        parentId: parentSpecId || undefined,
+        groupOnly: groupOnly || undefined,
+        description: '',
+        blocks: [],
+      },
       sortOrder: (pages.value.at(-1)?.sortOrder ?? 0) + 1,
       genStatus: 'idle',
       updatedAt: Date.now(),
     }
     await pageRepo.create(plainClone(page))
     pages.value.push(page)
-    selectPage(page.id)
+    if (!groupOnly) selectPage(page.id)
   }
 
   async function removePage(pageId: string): Promise<void> {
@@ -383,7 +407,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     refining,
     refineStream,
     progress,
-    pagesByModule,
+    menuGroups,
     load,
     generatePages,
     regenerateSelected,
