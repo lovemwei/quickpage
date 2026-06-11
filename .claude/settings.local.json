@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(mv ui-agent/* ui-agent/.[!.]* .)",
+      "Bash(rmdir ui-agent *)",
+      "Bash(npm install *)",
+      "Bash(npm i *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(JSON.stringify\\({...p.dependencies,...{xlsx:p.dependencies.xlsx}},null,0\\)\\)\")",
+      "Bash(rm -rf src/components/HelloWorld.vue src/components/TheWelcome.vue src/components/WelcomeItem.vue src/components/icons src/views/AboutView.vue src/views/HomeView.vue src/stores/counter.ts src/assets/base.css src/assets/logo.svg)",
+      "Bash(npm rm *)"
+    ]
+  }
+}
